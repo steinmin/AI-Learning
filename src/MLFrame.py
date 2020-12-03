@@ -229,10 +229,9 @@ class ModelFactory(object):
             self.model.fit(train_x,
                            train_y,
                            eval_set=eval_set,
-                           categorical_feature=categorical_features,
                            sample_weight=sample_weight,
                            early_stopping_rounds=setup['early_stopping_rounds'],
-                           # eval_metric=setup['eval_metric'],
+                           # eval_metric=setup['eval_metric'],categorical_feature=categorical_features,
                            verbose=setup['verbose'])
         elif self.model_type == 'xgb':
             self.model.fit(train_x,
@@ -256,6 +255,9 @@ class ModelFactory(object):
 
     def predict_prob(self, data):
         return self.model.predict_proba(data)
+
+    def get_importances(self):
+        return self.model.feature_importances_
 
 
 class ModelResult(object):
@@ -288,6 +290,7 @@ class MLearning(object):
         self.unusedFeatures = []
         self.categorical_features = []
         self.numeric_features = []
+        self.feature_importances = pd.DataFrame()
 
     def read_train(self, path, enc='gbk'):
         try:
@@ -398,6 +401,8 @@ class MLearning(object):
         if 'sample_weight' not in self.data.keys():
             self.data['sample_weight'] = 1
 
+        self.feature_importances['feature'] = self.features
+
         # generate model
         model = ModelFactory(model_type, random_state, model_setup)
 
@@ -408,6 +413,7 @@ class MLearning(object):
         test_data = self.data[test_index]
         train_data = self.data[~test_index].reset_index(drop=True)
 
+        fold = 0
         k_fold = KFold(n_splits=n_splits, shuffle=shuffle, random_state=random_state)
         for train_idx, val_idx in k_fold.split(train_data):
             train_x = train_data.loc[train_idx][self.features]
@@ -422,6 +428,8 @@ class MLearning(object):
             if len(test_data) != 0:
                 test_data[predict_label] = test_data[predict_label] + model.predict(test_data[self.features])
 
+            self.feature_importances['fold_{}'.format(fold + 1)] = model.get_importances()
+            fold+=1
         test_data[predict_label] = test_data[predict_label] / n_splits
 
         self.test_pre = test_data[predict_label]
@@ -442,6 +450,9 @@ class MLearning(object):
 
         vali_pre = model.predict(vali_x)
         print('LR AUC:           ' + str(roc_auc_score(vali_y, vali_pre)))
+
+        self.feature_importances['feature'] = self.features
+        self.feature_importances['important'] = model.get_importances()
 
         self.test_pre = model.predict(testx)
         return self.test_pre
